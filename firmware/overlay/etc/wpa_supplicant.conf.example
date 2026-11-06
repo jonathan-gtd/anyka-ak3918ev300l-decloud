@@ -1,0 +1,8 @@
+ctrl_interface=/var/run/wpa_supplicant
+# NOTE: this wpa_supplicant build rejects "update_config=1" (exits with code 255)
+network={
+    ssid="YOUR_SSID"
+    psk="YOUR_WIFI_PASSWORD"
+    key_mgmt=WPA-PSK
+    scan_ssid=1
+}

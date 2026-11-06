@@ -1,0 +1,45 @@
+#!/bin/sh
+# cam-update - over-the-network update of the app partition (mtd4), then reboot.
+# Usage : cam-update [IMAGE_URL]
+#         without argument, the URL is read from /conf/update_url
+#         (e.g. http://192.168.1.10:8088/app.sqfs). An "IMAGE_URL.md5" file must sit next to the image.
+# Safety: md5 checked, squashfs magic checked, size <= partition, tools copied to RAM, flashcp -v (read-back verify).
+
+# busybox ash reads scripts incrementally: run from RAM, not from the flash we are about to rewrite
+case "$0" in /tmp/*) ;; *) cp "$0" /tmp/cam-update.run && exec sh /tmp/cam-update.run "$@" ;; esac
+
+URL=${1:-$(cat /conf/update_url 2>/dev/null)}
+[ -n "$URL" ] || { echo "usage: cam-update IMAGE_URL   (or put the URL in /conf/update_url)"; exit 1; }
+IMG=/tmp/app_new.sqfs
+MTD=/dev/mtd4
+LIMIT=$((0x4A0000))
+B=/app/bin/busybox
+
+fail() { echo "FAILED: $*"; exit 1; }
+
+grep -q '^mtd4: 004a0000 .*"app"' /proc/mtd || fail "mtd4 is not the expected app partition"
+
+echo "1/5 download $URL"
+rm -f $IMG $IMG.md5
+$B wget -q -O $IMG "$URL" || fail "image download"
+$B wget -q -O $IMG.md5 "$URL.md5" || fail "md5 download"
+
+echo "2/5 checks"
+SZ=$($B stat -c %s $IMG)
+[ "$SZ" -gt 100000 ] && [ "$SZ" -le $LIMIT ] || fail "size $SZ out of bounds"
+[ "$($B head -c 4 $IMG)" = "hsqs" ] || fail "not a squashfs image"
+WANT=$($B cut -d' ' -f1 $IMG.md5)
+GOT=$($B md5sum $IMG | $B cut -d' ' -f1)
+[ "$WANT" = "$GOT" ] || fail "md5 mismatch ($GOT != $WANT)"
+echo "   ok: $SZ bytes, md5 $GOT"
+
+echo "3/5 tools to RAM, stop video"
+cp /app/bin/flashcp /app/bin/busybox /tmp/ || fail "copy tools"
+killall video.sh rtspd 2>/dev/null; sleep 2
+
+echo "4/5 writing flash (do not cut power)"
+/tmp/flashcp -v $IMG $MTD || fail "flashcp failed - DO NOT REBOOT, run cam-update again"
+
+echo "5/5 write verified, rebooting in 3 s"
+sync; sleep 3
+/tmp/busybox reboot -f

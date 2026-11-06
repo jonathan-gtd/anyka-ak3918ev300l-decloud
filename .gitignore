@@ -1,0 +1,14 @@
+# Never commit vendor binaries, dumps or personal settings
+*.bin
+*.sqfs
+*.sqfs.md5
+*.h265
+*.jffs2
+local/
+out/
+vendor/
+sdk/
+work/
+*.log
+serial/serial.log
+serial/cmdqueue.txt
