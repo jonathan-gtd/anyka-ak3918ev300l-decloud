@@ -23,7 +23,8 @@ Tested on a PTZ camera sold with the InstaView app (board `EVB_CBDM_AK3918EV300L
 | **Day/night** automatic (ISP luminance + hysteresis): IR-cut filter, IR LEDs, ISP night profile; `daynight auto\|day\|night` | ✅ (no light sensor on this board) |
 | **Pan + tilt** motors: homing into the end stops at boot, `ptz` command, **ONVIF PTZ** (continuous move, stop, home, absolute/relative, 8 presets) | ✅ |
 | **Frigate autotracking** ready: ONVIF RelativeMove in `TranslationSpaceFov` solved with the real dome geometry (two rotations, `src/ptzmath.c`: near the dome axis a pan move rotates the image instead of shifting it), lens ≈94°×62°, reliable `MoveStatus` (MOVING/IDLE) | ✅ |
-| Audio, RTSP/ONVIF authentication | 🚧 |
+| ONVIF authentication (WS-UsernameToken digest): `/conf/onvif.auth` with `user=NAME` and `password=SECRET` | ✅ |
+| Audio, RTSP authentication | 🚧 |
 | H.264 | ❌ the EV300L encoder only does H.265 and JPEG |
 
 ## How it works
@@ -140,7 +141,7 @@ ssh root@<camera-ip> cam-update http://<server>:<port>/app.sqfs
 
 ## Roadmap
 
-Day/night (IR-cut, IR LEDs, light sensor) · pan/tilt over HTTP and ONVIF PTZ · audio · RTSP/ONVIF authentication · OpenIPC hardware report.
+Day/night (IR-cut, IR LEDs, light sensor) · pan/tilt over HTTP and ONVIF PTZ · audio · RTSP authentication · OpenIPC hardware report.
 
 ## Credits
 
