@@ -1,0 +1,94 @@
+#!/app/bin/busybox sh
+# ptz-calib - interactive pan/tilt calibration over SSH:  ssh -t root@<cam> ptz-calib
+# Jog the camera with the keyboard, mark "straight ahead" and "horizon", tune motor speeds. Every change is saved
+# at once to /conf/ptz.conf (+ preset 1 "home") and used by ptz, ONVIF and Frigate autotracking.
+PTZ=/app/bin/ptz
+CONF=/conf/ptz.conf
+PRESETS=/conf/ptz_presets
+STEP=20
+
+setconf() {   # setconf VAR VALUE
+    touch $CONF
+    grep -v "^$1=" $CONF > /tmp/ptz-calib.conf
+    echo "$1=$2" >> /tmp/ptz-calib.conf
+    cp /tmp/ptz-calib.conf $CONF
+}
+val() {       # current value of a setting (ptz.conf, else the default in the ptz script)
+    v=$(sed -n "s/^$1=\([^ #]*\).*/\1/p" $CONF 2>/dev/null)
+    [ -z "$v" ] && v=$(sed -n "s/^$1=\([^ #]*\).*/\1/p" $PTZ)
+    echo $v
+}
+sethome() {   # preset 1 = straight ahead at the horizon
+    touch $PRESETS
+    grep -v "^1=" $PRESETS > /tmp/ptz-calib.pr
+    echo "1=home $(val PTZ_CENTER),$(val TILT_HOME),0" >> /tmp/ptz-calib.pr
+    cp /tmp/ptz-calib.pr $PRESETS
+}
+pan()  { cat /tmp/ptz/pan; }
+tilt() { cat /tmp/ptz/tilt; }
+
+# jog AXIS N: raw stepper move without travel limits (the limits are what we calibrate).
+# tilt counts up towards the horizon while its motor turns the "-" way.
+jog() {
+    $PTZ stop
+    if [ $1 = pan ]; then
+        out=$(/app/bin/stepper $(val PAN_PINS) $2 $(val PAN_DELAY) full $(val PAN_RAMP))
+        d=$(echo "$out" | sed -n 's/.*: \(-*[0-9]*\) half-steps done/\1/p')
+        echo $(( $(pan) + ${d:-0} )) > /tmp/ptz/pan
+    else
+        out=$(/app/bin/stepper $(val TILT_PINS) $(( -$2 )) $(val TILT_DELAY) full $(val TILT_RAMP))
+        d=$(echo "$out" | sed -n 's/.*: \(-*[0-9]*\) half-steps done/\1/p')
+        echo $(( $(tilt) - ${d:-0} )) > /tmp/ptz/tilt
+    fi
+}
+
+show() {
+    echo -e "\033[H\033[2J"
+    echo "=== ptz-calib ===================================================="
+    echo "  position      pan $(pan)   tilt $(tilt)   (half-steps, 4096 = 1 turn)"
+    echo "  calibration   straight ahead = pan $(val PTZ_CENTER)   horizon = tilt $(val TILT_H)   home tilt = $(val TILT_HOME)"
+    echo "  limits        pan 0..$(val PTZ_MAX)   tilt 0..$(val TILT_MAX)   (0 = end stops)"
+    echo "  speed         pan $(val PAN_DELAY) us/half-step   tilt $(val TILT_DELAY) us/half-step   ramp pan $(val PAN_RAMP) tilt $(val TILT_RAMP) (0 = none)"
+    echo "  jog step      $STEP half-steps (~$(( STEP * 88 / 1000 )) deg)"
+    echo "------------------------------------------------------------------"
+    echo "  q / d    pan  left / right          1 2 3 4   step 5 / 20 / 100 / 500"
+    echo "  z / s    tilt up / down (image)     (jogs ignore the limits: careful near the end stops)"
+    echo "  c        here = straight ahead (pan centre)"
+    echo "  h        here = horizon (also the home tilt)"
+    echo "  e        here = pan right limit     m   here = tilt limit (furthest from the dome axis)"
+    echo "  p / P    pan speed  faster / slower       t / T   tilt speed faster / slower"
+    echo "  a / b    pan / tilt acceleration ramp: 0 -> 50 -> 150 -> 400 half-steps -> 0"
+    echo "  r        re-home (end stops -> home): check that it comes back to the same place"
+    echo "  g        go home                          x       quit"
+    echo "------------------------------------------------------------------"
+    [ -n "$MSG" ] && echo "  $MSG"; MSG=
+}
+
+[ -f /tmp/ptz/pan ] && [ -f /tmp/ptz/tilt ] || { echo "homing first..."; $PTZ home; }
+while :; do
+    show
+    read -rsn1 k || { sleep 1; continue; }
+    case "$k" in
+        q) jog pan -$STEP ;;
+        d) jog pan $STEP ;;
+        z) jog tilt -$STEP ;;   # raw image: tilt towards the dome axis = image up
+        s) jog tilt $STEP ;;
+        1) STEP=5 ;; 2) STEP=20 ;; 3) STEP=100 ;; 4) STEP=500 ;;
+        c) p=$(pan); setconf PTZ_CENTER $p; sethome; MSG="saved: straight ahead = pan $p" ;;
+        h) t=$(tilt); setconf TILT_H $t; setconf TILT_HOME $t; sethome
+           [ $(val TILT_MAX) -lt $(( t + 76 )) ] && setconf TILT_MAX $(( t + 76 ))
+           MSG="saved: horizon = tilt $t (tilt limit $(val TILT_MAX))" ;;
+        e) p=$(pan); setconf PTZ_MAX $p; MSG="saved: pan right limit = $p" ;;
+        m) t=$(tilt); setconf TILT_MAX $t; MSG="saved: tilt limit = $t" ;;
+        p) v=$(( $(val PAN_DELAY) - 250 )); [ $v -lt 500 ] && v=500; setconf PAN_DELAY $v; MSG="pan speed $v us" ;;
+        P) setconf PAN_DELAY $(( $(val PAN_DELAY) + 250 )); MSG="pan speed $(val PAN_DELAY) us" ;;
+        t) v=$(( $(val TILT_DELAY) - 500 )); [ $v -lt 1000 ] && v=1000; setconf TILT_DELAY $v; MSG="tilt speed $v us" ;;
+        T) setconf TILT_DELAY $(( $(val TILT_DELAY) + 500 )); MSG="tilt speed $(val TILT_DELAY) us" ;;
+        a|b) [ $k = a ] && v=PAN_RAMP || v=TILT_RAMP
+           case $(val $v) in 0) n=50 ;; 50) n=150 ;; 150) n=400 ;; *) n=0 ;; esac
+           setconf $v $n; MSG="$v = $n" ;;
+        r) echo "  homing..."; $PTZ home; MSG="re-homed: is it back at the same place?" ;;
+        g) $PTZ center; $PTZ wait ;;
+        x) echo -e "\033[H\033[2J"; echo "settings in $CONF:"; cat $CONF; exit 0 ;;
+    esac
+done

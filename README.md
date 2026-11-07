@@ -46,7 +46,8 @@ U-Boot (stock) ─> Linux 4.4.282 (stock) ─> rootfs (stock squashfs) ─> /etc
 | Snapshot | `http://<ip>/snapshot.jpg` |
 | ONVIF | `http://<ip>/onvif/device_service` (add the camera by IP in Frigate, Home Assistant, ONVIF Device Manager…) |
 | Shell | `ssh root@<ip>` |
-| Pan/tilt | `ptz left\|right\|up\|down\|stop\|center\|goto P T\|rel DP DT\|fov DX DY\|pos\|preset set N NAME\|goto N\|list` (half-steps; pan 0 = left stop, tilt 0 = dome axis, 1024 = horizon; settings in `/conf/ptz.conf`) |
+| Pan/tilt | `ptz left\|right\|up\|down\|stop\|center\|goto P T\|rel DP DT\|fov DX DY\|pos\|preset set N NAME\|goto N\|list` (half-steps from the end stops; settings in `/conf/ptz.conf`) |
+| PTZ calibration | `ssh -t root@<ip> ptz-calib`: keyboard jog, mark straight ahead / horizon / limits, motor speed and acceleration, re-home check |
 | Day/night | `daynight auto\|day\|night [--save]`, `daynight status` |
 
 ### GPIO map (EVB_CBDM_AK3918EV300L board)

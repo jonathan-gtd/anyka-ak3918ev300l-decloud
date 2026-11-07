@@ -1,7 +1,7 @@
 /* ptzmath.c - aim a ceiling-mounted dome PTZ at a point of the current image.
  *
  * The dome has two rotations: pan around the vertical axis and tilt around a horizontal axis. Tilt is counted in
- * half-steps from the dome axis (t = 0: lens straight down) to the horizon (t = TILT_H). Near the dome axis a pan
+ * half-steps from the "+" end stop (t = 0) and the horizon is at t = TILT_H (the dome axis at TILT_H - 1024 on this unit). Near the dome axis a pan
  * move rotates the image instead of shifting it, so image offsets cannot be mapped linearly to pan/tilt: we rebuild
  * the 3D direction of the target and convert it back to pan/tilt angles.
  *

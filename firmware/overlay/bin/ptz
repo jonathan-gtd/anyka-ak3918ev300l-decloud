@@ -1,7 +1,7 @@
 #!/bin/sh
 # ptz - pan/tilt control of the dome (two steppers). Positions are in half-steps:
 #   pan  : 0 = left end stop .. PTZ_MAX          (PTZ_CENTER = straight ahead)
-#   tilt : 0 = dome axis (straight down when ceiling-mounted) .. TILT_MAX, TILT_H = horizon
+#   tilt : 0 = "+" end stop (~35 deg past the dome axis) .. TILT_MAX, TILT_H = horizon (dome axis = TILT_H - 1024)
 #   ptz home                      both axes to their end stops, then to the home position (also run at boot)
 #   ptz left|right|up|down [spd]  continuous move (as seen in the image) until "ptz stop" or the end of travel
 #   ptz stop                      stop all moves
@@ -11,14 +11,16 @@
 #   ptz preset set N NAME | goto N | del N | list   (/conf/ptz_presets: "N=NAME P,T,0")
 # Settings (/conf/ptz.conf overrides any variable below)
 PAN_PINS=50,24,25,27
-PAN_DELAY=1300
+PAN_DELAY=2500
+PAN_RAMP=0          # half-steps of acceleration/deceleration, 0 = constant speed
 PTZ_MAX=4340
-PTZ_CENTER=2170
+PTZ_CENTER=2410
 TILT_PINS=65,66,26,58
-TILT_DELAY=5000
-TILT_MAX=1100
-TILT_H=1024
-TILT_HOME=1024
+TILT_DELAY=4000
+TILT_RAMP=0
+TILT_MAX=1500
+TILT_H=1424
+TILT_HOME=1424
 HFOV=94
 VFOV=62
 DEG_PER_STEP=0.087890625
@@ -30,7 +32,7 @@ STEPPER=/app/bin/stepper
 
 pan()    { cat $D/pan 2>/dev/null || echo $PTZ_CENTER; }
 tilt()   { cat $D/tilt 2>/dev/null || echo $TILT_HOME; }
-moving() { for a in pan tilt; do [ -f $D/run_$a ] && kill -0 "$(cat $D/run_$a)" 2>/dev/null && return 0; done; return 1; }
+moving() { for a in pan tilt; do [ -f $D/run_$a ] && kill -0 "$(cat $D/run_$a 2>/dev/null)" 2>/dev/null && return 0; done; return 1; }
 clamp()  { v=$1; [ $v -lt 0 ] && v=0; [ $v -gt $2 ] && v=$2; echo $v; }
 int()    { v=${1%%.*}; case "$v" in ''|-) echo 0 ;; *) echo $v ;; esac; }
 neg()    { case "$1" in -*) echo ${1#-} ;; *) echo -$1 ;; esac; }
@@ -45,8 +47,8 @@ stop() {
 # tilt counts up towards the horizon while the motor turns the "-" way, hence the sign flip.
 axis_to() {
     a=$1
-    if [ $a = pan ]; then t=$(clamp $2 $PTZ_MAX); p=$(pan);  pins=$PAN_PINS;  dl=$PAN_DELAY;  sg=1
-    else                  t=$(clamp $2 $TILT_MAX); p=$(tilt); pins=$TILT_PINS; dl=$TILT_DELAY; sg=-1; fi
+    if [ $a = pan ]; then t=$(clamp $2 $PTZ_MAX); p=$(pan);  pins=$PAN_PINS;  dl="$PAN_DELAY full $PAN_RAMP";   sg=1
+    else                  t=$(clamp $2 $TILT_MAX); p=$(tilt); pins=$TILT_PINS; dl="$TILT_DELAY full $TILT_RAMP"; sg=-1; fi
     n=$((t - p)); [ $n -eq 0 ] && return 0
     mx=$PTZ_MAX; [ $a = tilt ] && mx=$TILT_MAX
     (
@@ -63,9 +65,9 @@ wait_move() { while moving; do usleep 100000; done; }
 case "$1" in
     home)
         stop
-        $STEPPER $PAN_PINS -$((PTZ_MAX + 150)) $PAN_DELAY >/dev/null 2>&1    # pan into the left stop
+        $STEPPER $PAN_PINS -$((PTZ_MAX + 150)) $PAN_DELAY full $PAN_RAMP >/dev/null 2>&1    # pan into the left stop
         echo 0 > $D/pan
-        $STEPPER $TILT_PINS $((TILT_MAX + 100)) $TILT_DELAY >/dev/null 2>&1 # tilt into the dome-axis stop
+        $STEPPER $TILT_PINS $((TILT_MAX + 100)) $TILT_DELAY full $TILT_RAMP >/dev/null 2>&1 # tilt into the "+" stop
         echo 0 > $D/tilt
         h=$(sed -n 's/^1=[^ ]* \([0-9]*\),\([0-9]*\),.*/\1 \2/p' $PRESETS 2>/dev/null)
         [ -n "$h" ] && move_to $h || move_to $PTZ_CENTER $TILT_HOME
