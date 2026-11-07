@@ -44,6 +44,23 @@ done
 cp $OUT/tools/dropbearmulti bin/dropbearmulti
 for a in dropbear dbclient dropbearkey scp ssh; do ln -sf dropbearmulti bin/$a; done
 
+# --- web: JPEG snapshot + ONVIF (onvif_simple_server CGI under busybox httpd) + WS-Discovery ---
+if [ -d $OUT/onvif ]; then
+    mkdir -p www/onvif
+    cp $OUT/onvif/onvif_simple_server www/onvif/
+    for d in device_service_files media_service_files media2_service_files deviceio_service_files events_service_files generic_files; do
+        cp -r $OUT/onvif/templates/$d www/onvif/
+    done
+    for s in device_service media_service media2_service deviceio_service events_service; do ln -s onvif_simple_server www/onvif/$s; done
+    cp -r $OUT/onvif/templates/wsd_files www/wsd_files
+    cp $OUT/onvif/wsd_simple_server bin/
+    cp $OUT/onvif/LICENSE www/onvif/LICENSE.onvif_simple_server
+    cp $REPO/firmware/overlay/etc/onvif_simple_server.conf etc/
+    chmod 755 www/onvif/onvif_simple_server bin/wsd_simple_server
+fi
+mkdir -p www
+ln -sf /tmp/snapshot.jpg www/snapshot.jpg
+
 sed -i 's/\r$//' init/*.sh etc/* bin/cam-update
 chmod 755 init/*.sh bin/rtspd bin/wdkeep bin/notso bin/cam-update bin/busybox bin/dropbearmulti
 chmod 644 etc/*

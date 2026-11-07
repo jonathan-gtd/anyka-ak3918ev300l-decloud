@@ -24,5 +24,6 @@ insmod /app/drivers/exfat.ko 2>/dev/null
 sh /app/ak/sensor_drin.sh  # probes I2C 0x40 and loads the sensor module (F26a = id 0852); the cloud app used to do this
 
 /app/init/net.sh &         # Wi-Fi + SSH + NTP
-/app/init/video.sh &       # RTSP server (respawned)
+/app/init/video.sh &       # RTSP server (respawned) + JPEG snapshot
+/app/init/web.sh &         # HTTP :80 (snapshot.jpg, ONVIF) + WS-Discovery
 [ -x /app/init/ircut.sh ] && /app/init/ircut.sh &

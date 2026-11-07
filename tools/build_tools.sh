@@ -16,6 +16,7 @@ if [ "$what" = all -o "$what" = busybox ]; then
   rm -rf $B/busybox-1.36.1 && tar -xjf $WORK/src/busybox-1.36.1.tar.bz2 -C $B
   cd $B/busybox-1.36.1
   make -s defconfig >/dev/null
+  python3 $REPO/tools/patch_busybox_httpd.py networking/httpd.c   # /onvif/* served as CGI
   # static, cross prefix, drop what breaks with uClibc-ng 1.0.28 / kernel 4.4
   sed -i -e 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' \
          -e "s|^CONFIG_CROSS_COMPILER_PREFIX=.*|CONFIG_CROSS_COMPILER_PREFIX=\"$CROSS\"|" \

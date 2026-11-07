@@ -12,14 +12,16 @@ Tested on a PTZ camera sold with the InstaView app (board `EVB_CBDM_AK3918EV300L
 
 | Feature | State |
 |---|---|
-| Cloud app removed, no outbound traffic (only ports 22 and 554 open) | ✅ |
+| Cloud app removed, no outbound traffic (only ports 22, 80, 554 and WS-Discovery open) | ✅ |
 | RTSP **H.265** `rtsp://<ip>:554/vs0` 1920×1080 and `/vs1` 640×360, ~15 fps | ✅ |
+| **JPEG snapshot** `http://<ip>/snapshot.jpg` 1920×1080, refreshed every second (hardware JPEG encoder) | ✅ |
+| **ONVIF** `http://<ip>/onvif/device_service` (onvif_simple_server): Profile S + Profile T / Media2 with H.265, stream and snapshot URIs, WS-Discovery | ✅ |
 | Wi-Fi client (WPA2), DHCP, automatic reconnection | ✅ |
 | SSH (dropbear, key and password), full BusyBox (vi, top, awk, nc…), NTP | ✅ |
 | Over-the-network firmware update (`cam-update`) | ✅ |
 | Hardware watchdog kept armed (camera reboots itself if user space hangs) | ✅ |
 | Day/night: IR-cut filter, IR LEDs, light sensor | 🚧 image is purple in daylight until the IR-cut is driven |
-| Pan/tilt motors, ONVIF, audio, snapshot JPEG | 🚧 |
+| Pan/tilt motors (and ONVIF PTZ), audio, ONVIF authentication | 🚧 |
 | H.264 | ❌ the EV300L encoder only does H.265 and JPEG |
 
 ## How it works
@@ -29,8 +31,21 @@ U-Boot (stock) ─> Linux 4.4.282 (stock) ─> rootfs (stock squashfs) ─> /etc
                                                                         └─> /app/init/app_init.sh   (this repo, app partition)
    app_init.sh : wdkeep (watchdog) · vendor modules (load.sh) · sensor probe (sensor_drin.sh)
    ├─ net.sh   : ATBM6132C driver · wpa_supplicant · udhcpc · TSO off · dropbear · ntpd · Wi-Fi link watchdog
-   └─ video.sh : rtspd (Anyka SDK RTSP sample, patched) respawned forever
+   ├─ video.sh : rtspd (Anyka SDK RTSP sample, patched: H.265 RTSP + 1 fps JPEG snapshot) respawned forever
+   └─ web.sh   : BusyBox httpd :80 (/snapshot.jpg, /onvif/* CGI) · wsd_simple_server (WS-Discovery)
 ```
+
+## Using it
+
+| What | Where |
+|---|---|
+| Main stream | `rtsp://<ip>:554/vs0` (H.265 1920×1080) |
+| Sub stream | `rtsp://<ip>:554/vs1` (H.265 640×360) |
+| Snapshot | `http://<ip>/snapshot.jpg` |
+| ONVIF | `http://<ip>/onvif/device_service` (add the camera by IP in Frigate, Home Assistant, ONVIF Device Manager…) |
+| Shell | `ssh root@<ip>` |
+
+WS-Discovery answers unicast probes; multicast probes need your router to forward `239.255.255.250` to Wi-Fi clients (an IGMP-snooping bridge with an empty group table drops them).
 
 Only the **app** partition (`mtd4`, squashfs mounted on `/app`) is rewritten. Persistent settings live in the **config** partition (`/conf`, jffs2):
 
@@ -64,6 +79,10 @@ docs/      hardware.md - hardware report and findings
      sdk/ANYKA_130L_SDK/          git clone --depth 1 --filter=blob:limit=3m https://github.com/Link-WQS/ANYKA_130L_SDK.git
      src/busybox-1.36.1.tar.bz2   https://busybox.net/downloads/
      src/dropbear-2024.86.tar.bz2 https://matt.ucc.asn.au/dropbear/releases/
+     src/onvif_simple_server-0.0.5.tar.gz  https://github.com/roleoroleo/onvif_simple_server (tag 0.0.5)
+     src/crypt-1.18.2.tar.xz      https://github.com/libtom/libtomcrypt/releases
+     src/zlib-1.3.1.tar.gz        https://github.com/madler/zlib/releases
+     src/json-c-0.17.tar.gz       https://github.com/json-c/json-c (tag json-c-0.17-20230812)
      local/wpa_supplicant.conf    copy of firmware/overlay/etc/wpa_supplicant.conf.example with your Wi-Fi
      local/authorized_keys        your SSH public key(s)
    ```
@@ -72,7 +91,7 @@ docs/      hardware.md - hardware report and findings
    docker build -t ak39-build docker/
    docker run --rm -it -v "$PWD":/repo -v /path/to/work:/work ak39-build bash -c '
      firmware/extract_dump.sh && tools/build_tools.sh all && rtsp/build_rtsp.sh &&
-     firmware/mkapp.sh && firmware/mkfull.sh'
+     tools/build_onvif.sh && firmware/mkapp.sh && firmware/mkfull.sh'
    ```
    Outputs in `work/out/`: `app.sqfs` (+ `.md5`) for network updates and `full.bin` for a programmer.
 
@@ -103,11 +122,11 @@ ssh root@<camera-ip> cam-update http://<server>:<port>/app.sqfs
 
 ## Roadmap
 
-Day/night (IR-cut, IR LEDs, light sensor) · pan/tilt over HTTP and ONVIF · ONVIF server · JPEG snapshots · audio · RTSP authentication · OpenIPC hardware report.
+Day/night (IR-cut, IR LEDs, light sensor) · pan/tilt over HTTP and ONVIF PTZ · audio · RTSP/ONVIF authentication · OpenIPC hardware report.
 
 ## Credits
 
-Anyka AnyCloud39AV130 SDK ([Link-WQS/ANYKA_130L_SDK](https://github.com/Link-WQS/ANYKA_130L_SDK)) for headers and the RTSP sample · cross toolchain from [michelostojski/ipcd](https://github.com/michelostojski/ipcd) · [OpenIPC](https://openipc.org) for the Anyka groundwork · [BusyBox](https://busybox.net) · [Dropbear](https://matt.ucc.asn.au/dropbear/dropbear.html).
+Anyka AnyCloud39AV130 SDK ([Link-WQS/ANYKA_130L_SDK](https://github.com/Link-WQS/ANYKA_130L_SDK)) for headers and the RTSP sample · cross toolchain from [michelostojski/ipcd](https://github.com/michelostojski/ipcd) · [onvif_simple_server](https://github.com/roleoroleo/onvif_simple_server) (GPLv3, built from source, not redistributed here) · [OpenIPC](https://openipc.org) for the Anyka groundwork · [BusyBox](https://busybox.net) · [Dropbear](https://matt.ucc.asn.au/dropbear/dropbear.html).
 
 ## Disclaimer
 

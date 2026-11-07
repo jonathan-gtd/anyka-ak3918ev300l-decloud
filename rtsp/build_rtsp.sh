@@ -18,6 +18,7 @@ cp $SDK/platform/lib/librtsp_server.so lib/
 python3 $REPO/rtsp/patch_enc_type.py ak_rtsp_stream.c        # enc_type override in ini + drop AENC codec registration
 python3 $REPO/rtsp/patch_ip.py ak_rtsp_server_sample.c       # announce the wlan0 IP instead of a hard-coded one
 python3 $REPO/rtsp/patch_noaudio.py ak_rtsp_stream.c         # no audio track (a dead one stalls librtsp_server)
+python3 $REPO/rtsp/patch_snapshot.py ak_rtsp_stream.c        # JPEG snapshot thread (1 fps -> /tmp/www/snapshot.jpg)
 [ "${DBG:-0}" = 1 ] && python3 $REPO/rtsp/patch_debug.py ak_rtsp_stream.c ak_rtsp_server_sample.c
 
 for f in ak_rtsp_server_sample.c ak_rtsp_stream.c aas_ini_parser.c; do

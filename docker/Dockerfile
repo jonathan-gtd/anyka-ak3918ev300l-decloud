@@ -5,7 +5,7 @@
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential bzip2 xz-utils file ca-certificates wget git \
+        build-essential cmake bzip2 xz-utils file ca-certificates wget git \
         squashfs-tools python3 python3-pip qemu-user-static ffmpeg openssl \
     && pip3 install --break-system-packages jefferson \
     && rm -rf /var/lib/apt/lists/*
