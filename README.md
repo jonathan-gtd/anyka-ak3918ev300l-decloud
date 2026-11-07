@@ -48,6 +48,7 @@ U-Boot (stock) ─> Linux 4.4.282 (stock) ─> rootfs (stock squashfs) ─> /etc
 | ONVIF | `http://<ip>/onvif/device_service` (add the camera by IP in Frigate, Home Assistant, ONVIF Device Manager…) |
 | Shell | `ssh root@<ip>` |
 | Pan/tilt | `ptz left\|right\|up\|down\|stop\|center\|goto P T\|rel DP DT\|fov DX DY\|pos\|preset set N NAME\|goto N\|list` (half-steps from the end stops; settings in `/conf/ptz.conf`) |
+| Web UI | `http://<ip>/ui/` (same credentials as ONVIF): live image (click = centre there), jog, calibration, motor settings, presets, day/night, credentials, reboot |
 | PTZ calibration | `ssh -t root@<ip> ptz-calib`: keyboard jog, mark straight ahead / horizon / limits, motor speed and acceleration, re-home check |
 | Day/night | `daynight auto\|day\|night [--save]`, `daynight status` |
 

@@ -34,7 +34,7 @@ cp $LOCAL/wpa_supplicant.conf etc/wpa_default.conf
 cp $OUT/rtspd bin/rtspd
 cp $OUT/librtsp_server.so lib/
 cp $OUT/wdkeep $OUT/notso $OUT/stepper $OUT/ptzmath bin/
-cp $REPO/firmware/overlay/bin/ptz $REPO/firmware/overlay/bin/ptz-calib $REPO/firmware/overlay/bin/daynight bin/
+cp $REPO/firmware/overlay/bin/ptz $REPO/firmware/overlay/bin/ptz-calib $REPO/firmware/overlay/bin/daynight $REPO/firmware/overlay/bin/webauth bin/
 
 # full static busybox: links only for applets missing from the stock rootfs busybox
 cp $OUT/tools/busybox bin/busybox
@@ -61,9 +61,10 @@ if [ -d $OUT/onvif ]; then
 fi
 mkdir -p www
 ln -sf /tmp/snapshot.jpg www/snapshot.jpg
+cp -r $REPO/firmware/overlay/www/. www/          # web UI (www/ui) + its CGI backend (www/cgi-bin/api)
 
-sed -i 's/\r$//' init/*.sh etc/* bin/cam-update bin/ptz bin/ptz-calib bin/daynight
-chmod 755 init/*.sh bin/rtspd bin/wdkeep bin/notso bin/stepper bin/ptzmath bin/ptz bin/ptz-calib bin/daynight bin/cam-update bin/busybox bin/dropbearmulti
+sed -i 's/\r$//' init/*.sh etc/* bin/cam-update bin/ptz bin/ptz-calib bin/daynight bin/webauth www/cgi-bin/api www/ui/index.html
+chmod 755 init/*.sh bin/rtspd bin/wdkeep bin/notso bin/stepper bin/ptzmath bin/ptz bin/ptz-calib bin/daynight bin/webauth bin/cam-update bin/busybox bin/dropbearmulti www/cgi-bin/api
 chmod 644 etc/*
 
 rm -f $OUT/app.sqfs

@@ -1,0 +1,16 @@
+#!/bin/sh
+# webauth - apply /conf/onvif.auth ("user=NAME", "password=SECRET") to ONVIF (WS-UsernameToken digest) and to the
+# web UI (HTTP basic auth on /ui and /cgi-bin). Without the file both are open. Values: letters, digits, . _ -
+C=/tmp/onvif/onvif_simple_server.conf
+U=$(sed -n 's/^user=//p' /conf/onvif.auth 2>/dev/null)
+P=$(sed -n 's/^password=//p' /conf/onvif.auth 2>/dev/null)
+if [ -n "$U" ] && [ -n "$P" ]; then
+    [ -f $C ] && sed -i -e "s|^#*user=.*|user=$U|" -e "s|^#*password=.*|password=$P|" $C
+    { echo "/ui:$U:$P"; echo "/cgi-bin:$U:$P"; } > /tmp/httpd.conf
+else
+    [ -f $C ] && sed -i -e "s|^user=.*|#user=admin|" -e "s|^password=.*|#password=admin|" $C
+    : > /tmp/httpd.conf
+fi
+chmod 600 /tmp/httpd.conf $C 2>/dev/null
+killall -HUP httpd 2>/dev/null   # httpd re-reads its config
+exit 0

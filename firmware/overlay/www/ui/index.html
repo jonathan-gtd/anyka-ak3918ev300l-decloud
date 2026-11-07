@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caméra PTZ</title>
+<style>
+:root { --bg:#f4f5f7; --card:#fff; --fg:#1d2330; --mute:#6b7385; --line:#dde1e8; --acc:#2563eb; --acc2:#e8efff; --warn:#b45309; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#12151b; --card:#1b2029; --fg:#e6e9ef; --mute:#97a0b3; --line:#2c3340; --acc:#6b9bff; --acc2:#223154; --warn:#f0a35c; }
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+header { padding:12px 16px; display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap; }
+header h1 { font-size:18px; margin:0; }
+#st { color:var(--mute); font-size:13px; }
+main { max-width:980px; margin:0 auto; padding:0 16px 32px; display:grid; gap:14px; grid-template-columns:1fr; }
+@media (min-width:860px) { main { grid-template-columns:3fr 2fr; } .wide { grid-column:1 / -1; } }
+section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; }
+h2 { font-size:15px; margin:0 0 10px; }
+.live { position:relative; }
+.live img { width:100%; display:block; border-radius:6px; background:#000; aspect-ratio:16/9; cursor:crosshair; }
+.hint { color:var(--mute); font-size:12px; margin-top:6px; }
+button, select, input { font:inherit; color:inherit; }
+button { background:var(--acc2); border:1px solid var(--line); border-radius:8px; padding:8px 12px; cursor:pointer; }
+button:hover { border-color:var(--acc); }
+button.pri { background:var(--acc); color:#fff; border-color:var(--acc); }
+button.warn { color:var(--warn); }
+input, select { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:7px 9px; width:100%; }
+.pad { display:grid; grid-template-columns:repeat(3,56px); grid-template-rows:repeat(3,56px); gap:6px; justify-content:center; margin:6px 0 10px; }
+.pad button { font-size:20px; padding:0; }
+.row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:8px 0; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px 12px; }
+label { font-size:13px; color:var(--mute); display:block; }
+label input[type=checkbox] { width:auto; margin-right:6px; vertical-align:middle; }
+.chk { color:var(--fg); font-size:14px; }
+table { width:100%; border-collapse:collapse; font-size:14px; }
+td { padding:5px 4px; border-top:1px solid var(--line); }
+td:last-child { text-align:right; white-space:nowrap; }
+.seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+.seg button { border:0; border-radius:0; background:transparent; }
+.seg button.on { background:var(--acc); color:#fff; }
+#toast { position:fixed; left:50%; bottom:16px; transform:translateX(-50%); background:var(--fg); color:var(--bg); padding:8px 14px; border-radius:8px; font-size:14px; opacity:0; transition:opacity .2s; pointer-events:none; }
+#toast.show { opacity:.95; }
+</style>
+</head>
+<body>
+<header><h1 id="host">Caméra PTZ</h1><div id="st">…</div></header>
+<main>
+  <section class="live">
+    <img id="img" alt="Image en direct" src="/snapshot.jpg">
+    <div class="hint">Cliquer sur l'image centre la caméra sur ce point (même calcul que le suivi Frigate).</div>
+  </section>
+
+  <section>
+    <h2>Déplacement</h2>
+    <div class="row">
+      <span>Pas :</span>
+      <div class="seg" id="steps">
+        <button data-n="5">5</button><button data-n="20" class="on">20</button><button data-n="100">100</button><button data-n="500">500</button>
+      </div>
+      <span class="hint" id="deg"></span>
+    </div>
+    <div class="pad">
+      <span></span><button data-j="up" aria-label="Haut">▲</button><span></span>
+      <button data-j="left" aria-label="Gauche">◀</button><button id="home" aria-label="Home">⌂</button><button data-j="right" aria-label="Droite">▶</button>
+      <span></span><button data-j="down" aria-label="Bas">▼</button><span></span>
+    </div>
+    <div class="hint">Les flèches ignorent les limites (pour calibrer) : attention près des butées.</div>
+    <div class="row">
+      <button id="stop">Stop</button>
+      <button id="rehome">Home complet (butées)</button>
+    </div>
+    <h2 style="margin-top:14px">Calibration (position actuelle)</h2>
+    <div class="row">
+      <button data-m="center">Ici = droit devant</button>
+      <button data-m="horizon">Ici = horizon</button>
+      <button data-m="panmax">Ici = limite pan</button>
+      <button data-m="tiltmax">Ici = limite tilt</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Réglages moteurs et optique</h2>
+    <div class="grid2">
+      <label>Vitesse pan (µs/demi-pas)<input data-k="PAN_DELAY" type="number" min="500" step="250"></label>
+      <label>Vitesse tilt (µs/demi-pas)<input data-k="TILT_DELAY" type="number" min="1000" step="500"></label>
+      <label>Rampe pan (demi-pas, 0 = aucune)<input data-k="PAN_RAMP" type="number" min="0" step="10"></label>
+      <label>Rampe tilt (demi-pas)<input data-k="TILT_RAMP" type="number" min="0" step="10"></label>
+      <label>Droit devant (pan)<input data-k="PTZ_CENTER" type="number" min="0"></label>
+      <label>Limite pan<input data-k="PTZ_MAX" type="number" min="0"></label>
+      <label>Horizon (tilt)<input data-k="TILT_H" type="number" min="0"></label>
+      <label>Tilt du home<input data-k="TILT_HOME" type="number" min="0"></label>
+      <label>Limite tilt<input data-k="TILT_MAX" type="number" min="0"></label>
+      <label>Mouvement mini Frigate (1/100 s)<input data-k="MIN_MOVE_CS" type="number" min="0" step="10"></label>
+      <label>Champ horizontal (°)<input data-k="HFOV" type="number" min="10" max="180"></label>
+      <label>Champ vertical (°)<input data-k="VFOV" type="number" min="10" max="180"></label>
+    </div>
+    <div style="margin-top:10px">
+      <label class="chk"><input type="checkbox" data-b="PAN_LEFT">Pan « + » tourne la vue vers la gauche</label>
+      <label class="chk"><input type="checkbox" data-b="TILT_DOWN">Tilt « + » baisse la vue</label>
+      <label class="chk"><input type="checkbox" data-b="IMG_ROT180">Image retournée (180°)</label>
+    </div>
+    <div class="hint">Chaque valeur est enregistrée dès qu'elle change.</div>
+  </section>
+
+  <section>
+    <h2>Presets</h2>
+    <table id="presets"></table>
+    <div class="row">
+      <input id="pname" placeholder="Nom (lettres, chiffres, _ -)" style="flex:1;min-width:140px">
+      <button id="padd">Enregistrer ici</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Jour / nuit</h2>
+    <div class="row">
+      <div class="seg" id="dn"><button data-d="auto">Auto</button><button data-d="day">Jour</button><button data-d="night">Nuit</button></div>
+      <span class="hint" id="dnst"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Identifiants (ONVIF + cette page)</h2>
+    <div class="grid2">
+      <label>Utilisateur<input id="au" autocomplete="username"></label>
+      <label>Mot de passe<input id="ap" type="password" autocomplete="new-password"></label>
+    </div>
+    <div class="row"><button id="asave">Changer</button><span class="hint">Pense à mettre les mêmes dans Frigate.</span></div>
+  </section>
+
+  <section class="wide">
+    <h2>Système</h2>
+    <div class="row"><span id="sys" class="hint"></span><span style="flex:1"></span><button id="reboot" class="warn">Redémarrer</button></div>
+  </section>
+</main>
+<div id="toast"></div>
+<script>
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+let step = 20, conf = {}, busy = false;
+
+function toast(t) { const e = $('#toast'); e.textContent = t; e.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.remove('show'), 1800); }
+async function api(params) {
+  const r = await fetch('/cgi-bin/api?' + new URLSearchParams(params), { cache: 'no-store' });
+  const txt = await r.text(), o = {};
+  txt.split('\n').forEach(l => { const i = l.indexOf('='); if (i > 0) o[l.slice(0, i)] = l.slice(i + 1); });
+  if (o.error) toast('Erreur : ' + o.error);
+  return o;
+}
+async function act(params, msg) {
+  if (busy) return; busy = true;
+  try { const o = await api(params); if (!o.error && msg) toast(msg); } catch (e) { toast('Caméra injoignable'); }
+  busy = false; refresh();
+}
+
+async function refresh() {
+  let o; try { o = await api({ c: 'status' }); } catch (e) { $('#st').textContent = 'hors ligne'; return; }
+  conf = o;
+  $('#host').textContent = o.host || 'Caméra PTZ';
+  const [p, t] = (o.pos || '0,0').split(',');
+  $('#st').textContent = `pan ${p} · tilt ${t}` + (o.moving === '1' ? ' · en mouvement' : '');
+  $$('[data-k]').forEach(i => { if (document.activeElement !== i) i.value = o[i.dataset.k] ?? ''; });
+  $$('[data-b]').forEach(i => { i.checked = o[i.dataset.b] === '1'; });
+  $$('#dn button').forEach(b => b.classList.toggle('on', b.dataset.d === o.dn_mode));
+  $('#dnst').textContent = `état : ${o.dn_state === 'night' ? 'nuit' : o.dn_state === 'day' ? 'jour' : o.dn_state}` + (o.dn_lumi ? ` · luminance ${o.dn_lumi}` : '');
+  if (document.activeElement !== $('#au')) $('#au').value = o.user || '';
+  const up = +o.uptime || 0;
+  $('#sys').textContent = `${o.ip || ''} · allumée depuis ${Math.floor(up / 3600)} h ${Math.floor(up % 3600 / 60)} min`;
+  const rows = Object.keys(o).filter(k => k.startsWith('preset_')).sort().map(k => {
+    const n = k.slice(7), [name, pos] = o[k].split(' ');
+    return `<tr><td>${n}. ${name.replace(/[<>&]/g, '')}</td><td>${pos.split(',').slice(0, 2).join(', ')}</td>
+      <td><button data-pg="${n}">Aller</button> ${n === '1' ? '' : `<button data-pd="${n}" class="warn">✕</button>`}</td></tr>`;
+  });
+  $('#presets').innerHTML = rows.join('') || '<tr><td>Aucun preset</td></tr>';
+  $('#deg').textContent = `≈ ${(step * 360 / 4096).toFixed(1)}°`;
+}
+
+$$('#steps button').forEach(b => b.onclick = () => {
+  step = +b.dataset.n; $$('#steps button').forEach(x => x.classList.toggle('on', x === b)); refresh();
+});
+$$('[data-j]').forEach(b => b.onclick = () => act({ c: 'jog', d: b.dataset.j, n: step }));
+$('#home').onclick = () => act({ c: 'home' }, 'Retour au home');
+$('#stop').onclick = () => act({ c: 'stop' });
+$('#rehome').onclick = () => act({ c: 'rehome' }, 'Home complet lancé');
+$$('[data-m]').forEach(b => b.onclick = () => act({ c: 'mark', w: b.dataset.m }, 'Enregistré'));
+$$('[data-k]').forEach(i => i.onchange = () => act({ c: 'set', k: i.dataset.k, v: i.value }, 'Enregistré'));
+$$('[data-b]').forEach(i => i.onchange = () => act({ c: 'set', k: i.dataset.b, v: i.checked ? 1 : 0 }, 'Enregistré'));
+$('#presets').onclick = e => {
+  const g = e.target.dataset.pg, d = e.target.dataset.pd;
+  if (g) act({ c: 'preset_goto', n: g });
+  if (d && confirm('Supprimer le preset ' + d + ' ?')) act({ c: 'preset_del', n: d }, 'Supprimé');
+};
+$('#padd').onclick = () => {
+  const used = Object.keys(conf).filter(k => k.startsWith('preset_')).map(k => +k.slice(7));
+  let n = 2; while (used.includes(n) && n < 8) n++;
+  if (used.includes(n)) { toast('8 presets maximum'); return; }
+  const m = ($('#pname').value || 'Preset_' + n).replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 24);
+  act({ c: 'preset_set', n, m }, 'Preset ' + n + ' enregistré'); $('#pname').value = '';
+};
+$$('#dn button').forEach(b => b.onclick = () => act({ c: 'daynight', m: b.dataset.d }, 'Mode ' + b.textContent));
+$('#asave').onclick = () => {
+  const u = $('#au').value.trim(), p = $('#ap').value;
+  if (!/^[A-Za-z0-9._-]{1,32}$/.test(u) || !/^[A-Za-z0-9._-]{4,32}$/.test(p)) { toast('Lettres, chiffres, . _ - ; mot de passe ≥ 4'); return; }
+  if (confirm('Changer les identifiants ? Le navigateur va les redemander.')) act({ c: 'auth', u, p }, 'Identifiants changés');
+};
+$('#reboot').onclick = () => { if (confirm('Redémarrer la caméra ?')) act({ c: 'reboot' }, 'Redémarrage…'); };
+$('#img').onclick = e => {
+  const r = e.target.getBoundingClientRect();
+  const x = ((e.clientX - r.left) / r.width * 2 - 1).toFixed(3), y = (1 - (e.clientY - r.top) / r.height * 2).toFixed(3);
+  act({ c: 'fov', x, y }, 'Centrage');
+};
+
+setInterval(() => { if (!document.hidden) $('#img').src = '/snapshot.jpg?t=' + Date.now(); }, 1000);
+setInterval(() => { if (!document.hidden && !busy) refresh(); }, 3000);
+refresh();
+</script>
+</body>
+</html>

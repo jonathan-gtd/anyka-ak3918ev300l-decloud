@@ -1,0 +1,68 @@
+#!/bin/sh
+# api - backend of the web UI (busybox httpd CGI, behind HTTP basic auth: bin/webauth). GET /cgi-bin/api?c=CMD&...
+# Answers "key=value" lines. Every argument is checked against a strict pattern before use.
+export PATH=/app/bin:/bin:/sbin:/usr/bin:/usr/sbin
+PTZ=/app/bin/ptz
+echo "Content-Type: text/plain; charset=utf-8"
+echo "Cache-Control: no-store"
+echo
+
+arg() {   # value of a query parameter, empty unless it is made only of letters, digits, . _ -
+    v=$(echo "&$QUERY_STRING" | sed -n "s/.*&$1=\([^&]*\).*/\1/p")
+    case "$v" in *[!A-Za-z0-9_.-]*) v= ;; esac
+    echo "$v"
+}
+num() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; [ ${#1} -le 6 ]; }          # unsigned integer
+flt() { case "$1" in ''|*[!0-9.-]*|*-*-*|?*-*) return 1 ;; esac; }              # -0.25, 0.5 ...
+err() { echo "error=$1"; exit 0; }
+
+status() {
+    echo "pos=$($PTZ pos)"
+    echo "moving=$($PTZ moving)"
+    $PTZ conf
+    $PTZ preset list 2>/dev/null | sed 's/^/preset_/'
+    echo "dn_mode=$(cat /tmp/daynight.mode 2>/dev/null || echo auto)"
+    echo "dn_state=$(cat /tmp/daynight.state 2>/dev/null || echo unknown)"
+    echo "dn_lumi=$(sed -n 's/.*lumi=\([0-9]*\).*/\1/p' /tmp/daynight.log 2>/dev/null)"
+    echo "user=$(sed -n 's/^user=//p' /conf/onvif.auth 2>/dev/null)"
+    echo "host=$(hostname)"
+    echo "uptime=$(cut -d. -f1 /proc/uptime)"
+    echo "ip=$(ifconfig wlan0 2>/dev/null | sed -n 's/.*inet addr:\([0-9.]*\).*/\1/p')"
+}
+
+c=$(arg c)
+case "$c" in
+    status) status ;;
+    jog)    d=$(arg d); n=$(arg n)
+            case "$d" in left|right|up|down) ;; *) err direction ;; esac
+            num "$n" && [ "$n" -ge 1 ] && [ "$n" -le 4000 ] || err steps
+            $PTZ jog $d $n >/dev/null; echo ok=1 ;;
+    move)   d=$(arg d); case "$d" in left|right|up|down) ;; *) err direction ;; esac
+            $PTZ $d; echo ok=1 ;;
+    stop)   $PTZ stop; echo ok=1 ;;
+    home)   $PTZ center; echo ok=1 ;;
+    rehome) ( $PTZ home >/dev/null 2>&1 & ); echo ok=1 ;;
+    goto)   p=$(arg p); t=$(arg t); num "$p" && num "$t" || err position
+            $PTZ goto $p $t; echo ok=1 ;;
+    fov)    x=$(arg x); y=$(arg y); flt "$x" && flt "$y" || err point
+            $PTZ fov $x $y; echo ok=1 ;;
+    mark)   w=$(arg w); case "$w" in center|horizon|panmax|tiltmax) ;; *) err point ;; esac
+            $PTZ mark $w ;;
+    set)    k=$(arg k); v=$(arg v); num "$v" || err value
+            $PTZ set "$k" "$v" ;;
+    preset_set)  n=$(arg n); m=$(arg m); num "$n" && [ "$n" -ge 1 ] && [ "$n" -le 8 ] || err number
+                 [ -n "$m" ] || m=Preset_$n
+                 $PTZ preset set $n "$m"; echo ok=1 ;;
+    preset_goto) n=$(arg n); num "$n" || err number; $PTZ preset goto $n; echo ok=1 ;;
+    preset_del)  n=$(arg n); num "$n" || err number; [ "$n" = 1 ] && err "home preset"
+                 $PTZ preset del $n; echo ok=1 ;;
+    daynight) m=$(arg m); case "$m" in auto|day|night) ;; *) err mode ;; esac
+              daynight $m --save >/dev/null; echo ok=1 ;;
+    auth)   u=$(arg u); p=$(arg p)
+            [ ${#u} -ge 1 ] && [ ${#u} -le 32 ] || err user
+            [ ${#p} -ge 4 ] && [ ${#p} -le 32 ] || err password
+            { echo "user=$u"; echo "password=$p"; } > /conf/onvif.auth; chmod 600 /conf/onvif.auth
+            /app/bin/webauth; echo ok=1 ;;
+    reboot) ( sleep 1; reboot ) >/dev/null 2>&1 & echo ok=1 ;;
+    *)      err command ;;
+esac

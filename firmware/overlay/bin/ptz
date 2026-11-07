@@ -1,6 +1,6 @@
 #!/bin/sh
 # ptz - pan/tilt control of the dome (two steppers). Positions are in half-steps:
-#   pan  : 0 = left end stop .. PTZ_MAX          (PTZ_CENTER = straight ahead)
+#   pan  : 0 = "-" end stop .. PTZ_MAX           (PTZ_CENTER = straight ahead)
 #   tilt : 0 = end stop .. TILT_MAX, TILT_H = position looking at the horizon (set it with ptz-calib, key h)
 #   ptz home                      both axes to their end stops, then to the home position (also run at boot)
 #   ptz left|right|up|down [spd]  continuous move (as seen in the image) until "ptz stop" or the end of travel
@@ -9,6 +9,8 @@
 #   ptz fov DX DY                 centre the image point DX,DY (-1..1, right/up +), exact dome geometry (ptzmath)
 #   ptz center | pos ("P,T,0") | moving (1/0) | wait
 #   ptz preset set N NAME | goto N | del N | list   (/conf/ptz_presets: "N=NAME P,T,0")
+#   ptz jog left|right|up|down N   raw move ignoring the limits    ptz mark center|horizon|panmax|tiltmax
+#   ptz set VAR VALUE | conf      change / show the settings below (web UI: http://<cam>/ui/)
 # Settings (/conf/ptz.conf overrides any variable below)
 PAN_PINS=50,24,25,27
 PAN_DELAY=2500
@@ -69,7 +71,7 @@ wait_move() { while moving; do usleep 100000; done; }
 case "$1" in
     home)
         stop
-        $STEPPER $PAN_PINS -$((PTZ_MAX + 150)) $PAN_DELAY full $PAN_RAMP >/dev/null 2>&1    # pan into the left stop
+        $STEPPER $PAN_PINS -$((PTZ_MAX + 150)) $PAN_DELAY full $PAN_RAMP >/dev/null 2>&1    # pan into its "-" end stop (pan 0)
         echo 0 > $D/pan
         $STEPPER $TILT_PINS $((TILT_MAX + 100)) $TILT_DELAY full $TILT_RAMP >/dev/null 2>&1 # tilt into the "+" stop
         echo 0 > $D/tilt
@@ -98,6 +100,39 @@ case "$1" in
     pos)    echo "$(pan),$(tilt),0" ;;
     moving) moving && echo 1 || echo 0 ;;
     wait)   wait_move ;;
+    jog)    # jog left|right|up|down N : raw move as seen in the image, ignores the travel limits (calibration)
+        rm -f $D/cont; stop; d=$2; n=$(int ${3:-20}); n=${n#-}
+        if [ "$IMG_ROT180" = 1 ]; then case $d in left) d=right ;; right) d=left ;; up) d=down ;; down) d=up ;; esac; fi
+        case $d in
+            left|right) s=1; [ "$PAN_LEFT" = 1 ] || s=-1; [ $d = right ] && s=$((-s))
+                        out=$($STEPPER $PAN_PINS $((s * n)) $PAN_DELAY full $PAN_RAMP)
+                        k=$(echo "$out" | sed -n 's/.*: \(-*[0-9]*\) half-steps done/\1/p'); echo $(( $(pan) + ${k:-0} )) > $D/pan ;;
+            up|down)    s=1; [ "$TILT_DOWN" = 1 ] || s=-1; [ $d = up ] && s=$((-s))
+                        out=$($STEPPER $TILT_PINS $((-s * n)) $TILT_DELAY full $TILT_RAMP)
+                        k=$(echo "$out" | sed -n 's/.*: \(-*[0-9]*\) half-steps done/\1/p'); echo $(( $(tilt) - ${k:-0} )) > $D/tilt ;;
+            *) echo "usage: ptz jog left|right|up|down N"; exit 1 ;;
+        esac ;;
+    set)    # set VAR VALUE : change one setting in /conf/ptz.conf (integers only)
+        case "$2" in PAN_DELAY|TILT_DELAY|PAN_RAMP|TILT_RAMP|PTZ_CENTER|PTZ_MAX|TILT_H|TILT_HOME|TILT_MAX|PAN_LEFT|TILT_DOWN|IMG_ROT180|HFOV|VFOV|MIN_MOVE_CS) ;;
+            *) echo "unknown setting $2"; exit 1 ;; esac
+        case "$3" in ''|*[!0-9]*) echo "bad value $3"; exit 1 ;; esac
+        touch /conf/ptz.conf; grep -v "^$2=" /conf/ptz.conf > $D/conf; echo "$2=$3" >> $D/conf; cp $D/conf /conf/ptz.conf
+        eval "$2=$3"
+        case "$2" in PTZ_CENTER|TILT_HOME)                 # preset 1 "home" follows straight ahead / home tilt
+            touch $PRESETS; grep -v "^1=" $PRESETS > $D/pr; echo "1=home $PTZ_CENTER,$TILT_HOME,0" >> $D/pr; cp $D/pr $PRESETS ;; esac
+        echo "$2=$3" ;;
+    mark)   # mark center|horizon|panmax|tiltmax : the current position becomes that calibration point
+        case "$2" in
+            center)  exec "$0" set PTZ_CENTER $(pan) ;;
+            horizon) "$0" set TILT_H $(tilt); exec "$0" set TILT_HOME $(tilt) ;;
+            panmax)  exec "$0" set PTZ_MAX $(pan) ;;
+            tiltmax) exec "$0" set TILT_MAX $(tilt) ;;
+            *) echo "usage: ptz mark center|horizon|panmax|tiltmax"; exit 1 ;;
+        esac ;;
+    conf)   # effective settings
+        for v in PAN_DELAY TILT_DELAY PAN_RAMP TILT_RAMP PTZ_CENTER PTZ_MAX TILT_H TILT_HOME TILT_MAX PAN_LEFT TILT_DOWN IMG_ROT180 HFOV VFOV MIN_MOVE_CS; do
+            eval echo "$v=\$$v"
+        done ;;
     preset)
         touch $PRESETS
         case "$2" in
@@ -110,5 +145,5 @@ case "$1" in
             list) cat $PRESETS ;;
             *)    echo "usage: ptz preset set N NAME|goto N|del N|list"; exit 1 ;;
         esac ;;
-    *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
