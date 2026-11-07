@@ -21,9 +21,8 @@ Tested on a PTZ camera sold with the InstaView app (board `EVB_CBDM_AK3918EV300L
 | Over-the-network firmware update (`cam-update`) | ✅ |
 | Hardware watchdog kept armed (camera reboots itself if user space hangs) | ✅ |
 | **Day/night** automatic (ISP luminance + hysteresis): IR-cut filter, IR LEDs, ISP night profile; `daynight auto\|day\|night` | ✅ (no light sensor on this board) |
-| **Pan** motor: homing at boot, `ptz` command, **ONVIF PTZ** (continuous move, stop, home, absolute/relative, 8 presets) | ✅ |
-| **Frigate autotracking** ready: ONVIF RelativeMove in `TranslationSpaceFov` mapped to the real lens (≈94° HFOV) and pan unit, reliable `MoveStatus` (MOVING/IDLE) | ✅ (pan only) |
-| Tilt motor | ⚠️ supported by the same code (GPIO 65,66,26,58) but disabled: broken on the test unit |
+| **Pan + tilt** motors: homing into the end stops at boot, `ptz` command, **ONVIF PTZ** (continuous move, stop, home, absolute/relative, 8 presets) | ✅ |
+| **Frigate autotracking** ready: ONVIF RelativeMove in `TranslationSpaceFov` solved with the real dome geometry (two rotations, `src/ptzmath.c`: near the dome axis a pan move rotates the image instead of shifting it), lens ≈94°×62°, reliable `MoveStatus` (MOVING/IDLE) | ✅ |
 | Audio, RTSP/ONVIF authentication | 🚧 |
 | H.264 | ❌ the EV300L encoder only does H.265 and JPEG |
 
@@ -47,7 +46,7 @@ U-Boot (stock) ─> Linux 4.4.282 (stock) ─> rootfs (stock squashfs) ─> /etc
 | Snapshot | `http://<ip>/snapshot.jpg` |
 | ONVIF | `http://<ip>/onvif/device_service` (add the camera by IP in Frigate, Home Assistant, ONVIF Device Manager…) |
 | Shell | `ssh root@<ip>` |
-| Pan | `ptz left\|right\|stop\|center\|goto N\|rel N\|pos\|preset set N NAME\|goto N\|list` (half-steps, 0 = left stop) |
+| Pan/tilt | `ptz left\|right\|up\|down\|stop\|center\|goto P T\|rel DP DT\|fov DX DY\|pos\|preset set N NAME\|goto N\|list` (half-steps; pan 0 = left stop, tilt 0 = dome axis, 1024 = horizon; settings in `/conf/ptz.conf`) |
 | Day/night | `daynight auto\|day\|night [--save]`, `daynight status` |
 
 ### GPIO map (EVB_CBDM_AK3918EV300L board)

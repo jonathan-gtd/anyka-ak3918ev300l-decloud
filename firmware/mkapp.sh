@@ -11,7 +11,7 @@ LOCAL=$WORK/local
 LIMIT=$((0x4A0000))               # size of mtd4 (app)
 T=/tmp/app_build
 
-for f in $WORK/vendor/app.sqfs $OUT/rtspd $OUT/librtsp_server.so $OUT/wdkeep $OUT/notso $OUT/stepper $OUT/tools/busybox $OUT/tools/dropbearmulti $LOCAL/wpa_supplicant.conf; do
+for f in $WORK/vendor/app.sqfs $OUT/rtspd $OUT/librtsp_server.so $OUT/wdkeep $OUT/notso $OUT/stepper $OUT/ptzmath $OUT/tools/busybox $OUT/tools/dropbearmulti $LOCAL/wpa_supplicant.conf; do
     [ -e "$f" ] || { echo "missing: $f"; exit 1; }
 done
 
@@ -33,7 +33,7 @@ cp $LOCAL/wpa_supplicant.conf etc/wpa_default.conf
 [ -f $LOCAL/authorized_keys ] && cp $LOCAL/authorized_keys etc/authorized_keys || : > etc/authorized_keys
 cp $OUT/rtspd bin/rtspd
 cp $OUT/librtsp_server.so lib/
-cp $OUT/wdkeep $OUT/notso $OUT/stepper bin/
+cp $OUT/wdkeep $OUT/notso $OUT/stepper $OUT/ptzmath bin/
 cp $REPO/firmware/overlay/bin/ptz $REPO/firmware/overlay/bin/daynight bin/
 
 # full static busybox: links only for applets missing from the stock rootfs busybox
@@ -63,7 +63,7 @@ mkdir -p www
 ln -sf /tmp/snapshot.jpg www/snapshot.jpg
 
 sed -i 's/\r$//' init/*.sh etc/* bin/cam-update bin/ptz bin/daynight
-chmod 755 init/*.sh bin/rtspd bin/wdkeep bin/notso bin/stepper bin/ptz bin/daynight bin/cam-update bin/busybox bin/dropbearmulti
+chmod 755 init/*.sh bin/rtspd bin/wdkeep bin/notso bin/stepper bin/ptzmath bin/ptz bin/daynight bin/cam-update bin/busybox bin/dropbearmulti
 chmod 644 etc/*
 
 rm -f $OUT/app.sqfs

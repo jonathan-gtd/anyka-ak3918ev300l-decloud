@@ -67,11 +67,11 @@ fi
 
 if [ "$what" = all -o "$what" = helpers ]; then
   # wdkeep (watchdog keeper) and notso (ethtool -K equivalent), static
-  for p in wdkeep notso stepper; do
-    ${CROSS}gcc -march=armv5te -Os -static -std=gnu99 -D_GNU_SOURCE -o $WORK/out/$p $REPO/src/$p.c
+  for p in wdkeep notso stepper ptzmath; do
+    ${CROSS}gcc -march=armv5te -Os -static -std=gnu99 -D_GNU_SOURCE -o $WORK/out/$p $REPO/src/$p.c -lm
     ${CROSS}strip $WORK/out/$p
   done
-  ls -la $WORK/out/wdkeep $WORK/out/notso $WORK/out/stepper
+  ls -la $WORK/out/wdkeep $WORK/out/notso $WORK/out/stepper $WORK/out/ptzmath
   echo "HELPERS_OK"
 fi
 
