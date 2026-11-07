@@ -24,6 +24,10 @@ wifi_up() {
 }
 wifi_up
 
+# green status LED (GPIO 68): on once the network is up
+[ -d /sys/class/gpio/gpio68 ] || echo 68 > /sys/class/gpio/export
+echo high > /sys/class/gpio/gpio68/direction
+
 # --- SSH (dropbear): keys live in /conf/dropbear ---
 mkdir -p /conf/dropbear && chmod 700 /conf/dropbear
 [ -f /conf/dropbear/authorized_keys ] || cp /app/etc/authorized_keys /conf/dropbear/authorized_keys 2>/dev/null

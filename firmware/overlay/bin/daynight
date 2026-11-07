@@ -1,0 +1,18 @@
+#!/bin/sh
+# daynight [auto|day|night|status] - day/night control (the switching itself is done by rtspd)
+#   auto  : the ISP decides (luminance + colour statistics), default
+#   day   : force day   (IR-cut filter in, IR LEDs off, colour profile)
+#   night : force night (IR-cut filter out, IR LEDs on, night profile)
+# Persistent default: put auto|day|night in /conf/daynight.mode
+case "$1" in
+    auto|day|night)
+        echo "$1" > /tmp/daynight.mode
+        [ "$2" = "--save" ] && echo "$1" > /conf/daynight.mode
+        sleep 2
+        ;;
+    ""|status) ;;
+    *) echo "usage: daynight [auto|day|night [--save]|status]"; exit 1 ;;
+esac
+echo "mode : $(cat /tmp/daynight.mode 2>/dev/null || echo auto)"
+echo "state: $(cat /tmp/daynight.state 2>/dev/null || echo unknown)"
+[ -f /tmp/daynight.log ] && echo "isp  : $(cat /tmp/daynight.log)"

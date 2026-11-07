@@ -20,8 +20,10 @@ Tested on a PTZ camera sold with the InstaView app (board `EVB_CBDM_AK3918EV300L
 | SSH (dropbear, key and password), full BusyBox (vi, top, awk, nc…), NTP | ✅ |
 | Over-the-network firmware update (`cam-update`) | ✅ |
 | Hardware watchdog kept armed (camera reboots itself if user space hangs) | ✅ |
-| Day/night: IR-cut filter, IR LEDs, light sensor | 🚧 image is purple in daylight until the IR-cut is driven |
-| Pan/tilt motors (and ONVIF PTZ), audio, ONVIF authentication | 🚧 |
+| **Day/night** automatic (ISP luminance + hysteresis): IR-cut filter, IR LEDs, ISP night profile; `daynight auto\|day\|night` | ✅ (no light sensor on this board) |
+| **Pan** motor: homing at boot, `ptz` command, **ONVIF PTZ** (continuous move, stop, home, absolute/relative, 8 presets) | ✅ |
+| Tilt motor | ⚠️ supported by the same code (GPIO 65,66,26,58) but disabled: broken on the test unit |
+| Audio, RTSP/ONVIF authentication | 🚧 |
 | H.264 | ❌ the EV300L encoder only does H.265 and JPEG |
 
 ## How it works
@@ -44,6 +46,21 @@ U-Boot (stock) ─> Linux 4.4.282 (stock) ─> rootfs (stock squashfs) ─> /etc
 | Snapshot | `http://<ip>/snapshot.jpg` |
 | ONVIF | `http://<ip>/onvif/device_service` (add the camera by IP in Frigate, Home Assistant, ONVIF Device Manager…) |
 | Shell | `ssh root@<ip>` |
+| Pan | `ptz left\|right\|stop\|center\|goto N\|rel N\|pos\|preset set N NAME\|goto N\|list` (half-steps, 0 = left stop) |
+| Day/night | `daynight auto\|day\|night [--save]`, `daynight status` |
+
+### GPIO map (EVB_CBDM_AK3918EV300L board)
+
+| GPIO | Function |
+|---|---|
+| 17 / 18 | IR-cut H-bridge: 150 ms pulse on 17 = filter out (night), on 18 = filter in (day) |
+| 56 | IR LEDs (1 = on) |
+| 69 | white LEDs (1 = on); PWM `pwmchip3/pwm0` also drives them |
+| 68 | green status LED (1 = on) |
+| 50, 24, 25, 27 | pan stepper phases (in this order), 1.3 ms per half-step with ramp, ~4340 half-steps end to end |
+| 65, 66, 26, 58 | tilt stepper phases |
+
+The pins of the two steppers are interleaved (taken from the vendor `gv_step_motor.ko` table). The kernel only wakes sleepers on its 10 ms tick, so `stepper` busy-waits on the monotonic clock for the step timing.
 
 WS-Discovery answers unicast probes; multicast probes need your router to forward `239.255.255.250` to Wi-Fi clients (an IGMP-snooping bridge with an empty group table drops them).
 

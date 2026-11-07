@@ -1,0 +1,74 @@
+#!/bin/sh
+# ptz - pan control (stepper on GPIO 50,24,25,27; tilt motor not driven).
+# Position is counted in half-steps from the left end stop (0 .. PTZ_MAX), recalibrated by "ptz home".
+#   ptz home              go to the left stop, then to the centre (also run at boot)
+#   ptz left|right [spd]  continuous move until "ptz stop" or the end of travel (spd 0..1, ignored)
+#   ptz stop              stop a continuous move
+#   ptz goto N            absolute position N (half-steps)   ptz rel N   relative move (+ right, - left)
+#   ptz center            go to the centre                    ptz pos     print "x,0,0"   ptz moving  1/0
+#   ptz preset set N NAME | goto N | del N | list   (stored in /conf/ptz_presets as "N=NAME x,0,0")
+# Settings (/conf/ptz.conf overrides): PAN_PINS PTZ_DELAY PTZ_MAX PTZ_CENTER
+PAN_PINS=50,24,25,27
+PTZ_DELAY=1300
+PTZ_MAX=4340
+PTZ_CENTER=2170
+[ -f /conf/ptz.conf ] && . /conf/ptz.conf
+D=/tmp/ptz; mkdir -p $D
+PRESETS=/conf/ptz_presets
+STEPPER=/app/bin/stepper
+
+pos()    { cat $D/pos 2>/dev/null || echo $PTZ_CENTER; }
+moving() { [ -f $D/run ] && kill -0 "$(cat $D/run)" 2>/dev/null; }
+clamp()  { v=$1; [ $v -lt 0 ] && v=0; [ $v -gt $PTZ_MAX ] && v=$PTZ_MAX; echo $v; }
+
+stop() {
+    moving || return 0
+    killall stepper 2>/dev/null
+    i=0; while moving && [ $i -lt 30 ]; do usleep 100000; i=$((i+1)); done
+}
+
+# move to absolute target, in the background (the worker updates the position when the stepper exits)
+move_to() {
+    stop
+    t=$(clamp $1); p=$(pos); n=$((t - p))
+    [ $n -eq 0 ] && return 0
+    (
+        out=$($STEPPER $PAN_PINS $n $PTZ_DELAY 2>/dev/null)
+        done=$(echo "$out" | sed -n 's/.*: \(-*[0-9]*\) half-steps done/\1/p')
+        echo $(clamp $((p + ${done:-0}))) > $D/pos
+        rm -f $D/run
+    ) &
+    echo $! > $D/run
+}
+
+wait_move() { while moving; do usleep 100000; done; }
+
+case "$1" in
+    home)
+        stop
+        $STEPPER $PAN_PINS -$((PTZ_MAX + 150)) $PTZ_DELAY >/dev/null 2>&1   # overrun into the left stop
+        echo 0 > $D/pos
+        move_to $PTZ_CENTER; wait_move ;;
+    center) move_to $PTZ_CENTER ;;
+    left)   move_to 0 ;;
+    right)  move_to $PTZ_MAX ;;
+    stop)   stop ;;
+    goto)   move_to ${2%%.*} ;;
+    rel)    move_to $(( $(pos) + ${2%%.*} )) ;;
+    pos)    echo "$(pos),0,0" ;;
+    moving) moving && echo 1 || echo 0 ;;
+    wait)   wait_move ;;
+    preset)
+        touch $PRESETS
+        case "$2" in
+            set)  n=$3
+                  case "$n" in ''|-*|*[!0-9]*)            # no number from the client: first free slot 1..8
+                      n=1; while [ $n -lt 8 ] && grep -q "^$n=" $PRESETS; do n=$((n+1)); done ;; esac
+                  grep -v "^$n=" $PRESETS > $D/pr; echo "$n=${4:-Preset_$n} $(pos),0,0" >> $D/pr; cp $D/pr $PRESETS ;;
+            goto) x=$(sed -n "s/^$3=[^ ]* \([0-9]*\),.*/\1/p" $PRESETS); [ -n "$x" ] && move_to $x ;;
+            del)  grep -v "^$3=" $PRESETS > $D/pr; cp $D/pr $PRESETS ;;
+            list) cat $PRESETS ;;
+            *)    echo "usage: ptz preset set N NAME|goto N|del N|list"; exit 1 ;;
+        esac ;;
+    *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac
