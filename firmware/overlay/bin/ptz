@@ -18,13 +18,15 @@ PAN_RAMP=0          # half-steps of acceleration/deceleration, 0 = constant spee
 PTZ_MAX=4340
 PTZ_CENTER=2410
 TILT_PINS=65,66,26,58
-TILT_DELAY=4000
+TILT_DELAY=7000      # faster loses steps (measured: 4 ms drifts ~80 half-steps over 5 round trips)
 TILT_RAMP=0
-TILT_MAX=2048       # factory: 180 deg of tilt travel
-TILT_H=1424
-TILT_HOME=1424
-HFOV=94
-VFOV=62
+TILT_MAX=1330       # lower end stop measured at ~1340 on this unit
+TILT_H=1190
+TILT_HOME=1190
+HFOV=76             # lens field of view across the image, f-theta model (strong barrel distortion), measured
+VFOV=43
+PAN_BACKLASH=45     # gear backlash (half-steps) taken up when a motor reverses, measured on this unit
+TILT_BACKLASH=100
 DEG_PER_STEP=0.087890625
 PAN_LEFT=1          # 1: pan "+" turns the view to the left (this unit), 0: to the right
 TILT_DOWN=1         # 1: tilt "+" (away from the end stop) turns the view down (this unit), 0: up
@@ -45,21 +47,34 @@ now_cs() { read u _ < /proc/uptime; echo ${u%.*}${u#*.}; }
 
 stop() {
     moving || return 0
-    killall stepper 2>/dev/null
+    touch $D/halt; killall stepper 2>/dev/null
     i=0; while moving && [ $i -lt 30 ]; do usleep 100000; i=$((i+1)); done
+    rm -f $D/halt
+}
+
+# drive AXIS N : turn the AXIS motor N half-steps (motor sign) and print the half-steps done. When the motor
+# reverses, the gear backlash is taken up first: those steps do not move the camera and are not counted.
+drive() {
+    if [ $1 = pan ]; then pins=$PAN_PINS; dl="$PAN_DELAY full $PAN_RAMP"; bl=$PAN_BACKLASH
+    else pins=$TILT_PINS; dl="$TILT_DELAY full $TILT_RAMP"; bl=$TILT_BACKLASH; fi
+    sn=1; [ $2 -lt 0 ] && sn=-1
+    if [ "$(cat $D/dir_$1 2>/dev/null)" != "$sn" ] && [ "${bl:-0}" -gt 0 ]; then
+        $STEPPER $pins $((sn * bl)) $dl >/dev/null 2>&1
+        [ -f $D/halt ] && { echo 0; return; }
+    fi
+    echo $sn > $D/dir_$1
+    $STEPPER $pins $2 $dl 2>/dev/null | sed -n 's/.*: \(-*[0-9]*\) half-steps done/\1/p'
 }
 
 # axis_to AXIS TARGET : background move, the worker stores the real position when the stepper exits.
 # tilt counts up towards the horizon while the motor turns the "-" way, hence the sign flip.
 axis_to() {
     a=$1
-    if [ $a = pan ]; then t=$(clamp $2 $PTZ_MAX); p=$(pan);  pins=$PAN_PINS;  dl="$PAN_DELAY full $PAN_RAMP";   sg=1
-    else                  t=$(clamp $2 $TILT_MAX); p=$(tilt); pins=$TILT_PINS; dl="$TILT_DELAY full $TILT_RAMP"; sg=-1; fi
+    if [ $a = pan ]; then t=$(clamp $2 $PTZ_MAX); p=$(pan);  sg=1; mx=$PTZ_MAX
+    else                  t=$(clamp $2 $TILT_MAX); p=$(tilt); sg=-1; mx=$TILT_MAX; fi
     n=$((t - p)); [ $n -eq 0 ] && return 0
-    mx=$PTZ_MAX; [ $a = tilt ] && mx=$TILT_MAX
     (
-        out=$($STEPPER $pins $((sg * n)) $dl 2>/dev/null)
-        done=$(echo "$out" | sed -n 's/.*: \(-*[0-9]*\) half-steps done/\1/p')
+        done=$(drive $a $((sg * n)))
         echo $(clamp $((p + sg * ${done:-0})) $mx) > $D/$a
         rm -f $D/run_$a
     ) &
@@ -71,9 +86,9 @@ wait_move() { while moving; do usleep 100000; done; }
 case "$1" in
     home)
         stop
-        $STEPPER $PAN_PINS -$((PTZ_MAX + 150)) $PAN_DELAY full $PAN_RAMP >/dev/null 2>&1    # pan into its "-" end stop (pan 0)
+        drive pan -$((PTZ_MAX + 150)) >/dev/null     # pan into its "-" end stop (pan 0)
         echo 0 > $D/pan
-        $STEPPER $TILT_PINS $((TILT_MAX + 100)) $TILT_DELAY full $TILT_RAMP >/dev/null 2>&1 # tilt into the "+" stop
+        drive tilt $((TILT_MAX + 100)) >/dev/null    # tilt into its end stop (tilt 0)
         echo 0 > $D/tilt
         h=$(sed -n 's/^1=[^ ]* \([0-9]*\),\([0-9]*\),.*/\1 \2/p' $PRESETS 2>/dev/null)
         [ -n "$h" ] && move_to $h || move_to $PTZ_CENTER $TILT_HOME
@@ -105,15 +120,13 @@ case "$1" in
         if [ "$IMG_ROT180" = 1 ]; then case $d in left) d=right ;; right) d=left ;; up) d=down ;; down) d=up ;; esac; fi
         case $d in
             left|right) s=1; [ "$PAN_LEFT" = 1 ] || s=-1; [ $d = right ] && s=$((-s))
-                        out=$($STEPPER $PAN_PINS $((s * n)) $PAN_DELAY full $PAN_RAMP)
-                        k=$(echo "$out" | sed -n 's/.*: \(-*[0-9]*\) half-steps done/\1/p'); echo $(( $(pan) + ${k:-0} )) > $D/pan ;;
+                        k=$(drive pan $((s * n))); echo $(( $(pan) + ${k:-0} )) > $D/pan ;;
             up|down)    s=1; [ "$TILT_DOWN" = 1 ] || s=-1; [ $d = up ] && s=$((-s))
-                        out=$($STEPPER $TILT_PINS $((-s * n)) $TILT_DELAY full $TILT_RAMP)
-                        k=$(echo "$out" | sed -n 's/.*: \(-*[0-9]*\) half-steps done/\1/p'); echo $(( $(tilt) - ${k:-0} )) > $D/tilt ;;
+                        k=$(drive tilt $((-s * n))); echo $(( $(tilt) - ${k:-0} )) > $D/tilt ;;
             *) echo "usage: ptz jog left|right|up|down N"; exit 1 ;;
         esac ;;
     set)    # set VAR VALUE : change one setting in /conf/ptz.conf (integers only)
-        case "$2" in PAN_DELAY|TILT_DELAY|PAN_RAMP|TILT_RAMP|PTZ_CENTER|PTZ_MAX|TILT_H|TILT_HOME|TILT_MAX|PAN_LEFT|TILT_DOWN|IMG_ROT180|HFOV|VFOV|MIN_MOVE_CS) ;;
+        case "$2" in PAN_DELAY|TILT_DELAY|PAN_RAMP|TILT_RAMP|PTZ_CENTER|PTZ_MAX|TILT_H|TILT_HOME|TILT_MAX|PAN_LEFT|TILT_DOWN|IMG_ROT180|HFOV|VFOV|MIN_MOVE_CS|PAN_BACKLASH|TILT_BACKLASH) ;;
             *) echo "unknown setting $2"; exit 1 ;; esac
         case "$3" in ''|*[!0-9]*) echo "bad value $3"; exit 1 ;; esac
         touch /conf/ptz.conf; grep -v "^$2=" /conf/ptz.conf > $D/conf; echo "$2=$3" >> $D/conf; cp $D/conf /conf/ptz.conf
@@ -130,7 +143,7 @@ case "$1" in
             *) echo "usage: ptz mark center|horizon|panmax|tiltmax"; exit 1 ;;
         esac ;;
     conf)   # effective settings
-        for v in PAN_DELAY TILT_DELAY PAN_RAMP TILT_RAMP PTZ_CENTER PTZ_MAX TILT_H TILT_HOME TILT_MAX PAN_LEFT TILT_DOWN IMG_ROT180 HFOV VFOV MIN_MOVE_CS; do
+        for v in PAN_DELAY TILT_DELAY PAN_RAMP TILT_RAMP PTZ_CENTER PTZ_MAX TILT_H TILT_HOME TILT_MAX PAN_LEFT TILT_DOWN IMG_ROT180 HFOV VFOV MIN_MOVE_CS PAN_BACKLASH TILT_BACKLASH; do
             eval echo "$v=\$$v"
         done ;;
     preset)

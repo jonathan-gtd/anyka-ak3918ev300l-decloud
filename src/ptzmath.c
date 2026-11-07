@@ -45,8 +45,12 @@ int main(int argc, char **argv)
     double R[3] = { -cos(th0), 0.0, sin(th0) };
     double U[3] = { R[1] * f[2] - R[2] * f[1], R[2] * f[0] - R[0] * f[2], R[0] * f[1] - R[1] * f[0] };
 
-    /* ray through the target pixel (pinhole model) */
-    double X = dx * tan(RAD(hfov / 2)), Y = dy * tan(RAD(vfov / 2));
+    /* ray through the target pixel. f-theta (equidistant) lens model: the angle from the optical axis grows linearly
+     * with the distance to the image centre, which fits this wide-angle lens with strong barrel distortion far
+     * better than a pinhole. HFOV / VFOV are the full angles across the image (same angular scale per pixel). */
+    double ax = dx * RAD(hfov / 2), ay = dy * RAD(vfov / 2);
+    double rr = sqrt(ax * ax + ay * ay), k = rr > 1e-9 ? tan(rr) / rr : 1.0;
+    double X = ax * k, Y = ay * k;
     double d[3];
     for (int i = 0; i < 3; i++) d[i] = f[i] + X * R[i] + Y * U[i];
 
