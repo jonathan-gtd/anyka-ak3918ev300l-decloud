@@ -69,10 +69,12 @@ while :; do
     show
     read -rsn1 k || { sleep 1; continue; }
     case "$k" in
-        q) jog pan -$STEP ;;
-        d) jog pan $STEP ;;
-        z) jog tilt -$STEP ;;   # raw image: tilt towards the dome axis = image up
-        s) jog tilt $STEP ;;
+        q|d|z|s)                # directions as seen in the image
+           m=1; [ "$(val IMG_ROT180)" = 1 ] && m=-1
+           pm=$m; [ "$(val PAN_LEFT)" = 1 ] && pm=$(( -m ))      # pm: sign of pan "+" for "right"
+           tm=$m; [ "$(val TILT_DOWN)" = 0 ] && tm=$(( -m ))     # tm: sign of tilt "+" for "down"
+           case $k in q) jog pan $(( -pm * STEP )) ;; d) jog pan $(( pm * STEP )) ;;
+                      z) jog tilt $(( -tm * STEP )) ;; s) jog tilt $(( tm * STEP )) ;; esac ;;
         1) STEP=5 ;; 2) STEP=20 ;; 3) STEP=100 ;; 4) STEP=500 ;;
         c) p=$(pan); setconf PTZ_CENTER $p; sethome; MSG="saved: straight ahead = pan $p" ;;
         h) t=$(tilt); setconf TILT_H $t; setconf TILT_HOME $t; sethome

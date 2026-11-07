@@ -1,7 +1,7 @@
 #!/bin/sh
 # ptz - pan/tilt control of the dome (two steppers). Positions are in half-steps:
 #   pan  : 0 = left end stop .. PTZ_MAX          (PTZ_CENTER = straight ahead)
-#   tilt : 0 = "+" end stop (~35 deg past the dome axis) .. TILT_MAX, TILT_H = horizon (dome axis = TILT_H - 1024)
+#   tilt : 0 = end stop .. TILT_MAX, TILT_H = position looking at the horizon (set it with ptz-calib, key h)
 #   ptz home                      both axes to their end stops, then to the home position (also run at boot)
 #   ptz left|right|up|down [spd]  continuous move (as seen in the image) until "ptz stop" or the end of travel
 #   ptz stop                      stop all moves
@@ -18,13 +18,16 @@ PTZ_CENTER=2410
 TILT_PINS=65,66,26,58
 TILT_DELAY=4000
 TILT_RAMP=0
-TILT_MAX=1500
+TILT_MAX=2048       # factory: 180 deg of tilt travel
 TILT_H=1424
 TILT_HOME=1424
 HFOV=94
 VFOV=62
 DEG_PER_STEP=0.087890625
-IMG_ROT180=0        # 1 if the image is rotated 180 degrees (ceiling mount with image flip)
+PAN_LEFT=1          # 1: pan "+" turns the view to the left (this unit), 0: to the right
+TILT_DOWN=1         # 1: tilt "+" (away from the end stop) turns the view down (this unit), 0: up
+IMG_ROT180=0        # 1 if the image is rotated 180 degrees (e.g. a flipped sensor image)
+MIN_MOVE_CS=60      # continuous moves last at least this long (1/100 s): a short tap in Frigate still moves
 [ -f /conf/ptz.conf ] && . /conf/ptz.conf
 D=/tmp/ptz; mkdir -p $D
 PRESETS=/conf/ptz_presets
@@ -36,6 +39,7 @@ moving() { for a in pan tilt; do [ -f $D/run_$a ] && kill -0 "$(cat $D/run_$a 2>
 clamp()  { v=$1; [ $v -lt 0 ] && v=0; [ $v -gt $2 ] && v=$2; echo $v; }
 int()    { v=${1%%.*}; case "$v" in ''|-) echo 0 ;; *) echo $v ;; esac; }
 neg()    { case "$1" in -*) echo ${1#-} ;; *) echo -$1 ;; esac; }
+now_cs() { read u _ < /proc/uptime; echo ${u%.*}${u#*.}; }
 
 stop() {
     moving || return 0
@@ -59,7 +63,7 @@ axis_to() {
     ) &
     echo $! > $D/run_$a
 }
-move_to() { stop; axis_to pan "$1"; [ -n "$2" ] && axis_to tilt "$2"; }
+move_to() { rm -f $D/cont; stop; axis_to pan "$1"; [ -n "$2" ] && axis_to tilt "$2"; }
 wait_move() { while moving; do usleep 100000; done; }
 
 case "$1" in
@@ -74,16 +78,22 @@ case "$1" in
         wait_move ;;
     center) h=$(sed -n 's/^1=[^ ]* \([0-9]*\),\([0-9]*\),.*/\1 \2/p' $PRESETS 2>/dev/null)
             [ -n "$h" ] && move_to $h || move_to $PTZ_CENTER $TILT_HOME ;;
-    left|right|up|down)                   # directions as seen in the image (raw: pan + = right, tilt "+" stop = up)
-        stop; d=$1
+    left|right|up|down)                   # directions as seen in the image
+        stop; d=$1; now_cs > $D/cont
         if [ "$IMG_ROT180" = 1 ]; then case $d in left) d=right ;; right) d=left ;; up) d=down ;; down) d=up ;; esac; fi
-        case $d in left) axis_to pan 0 ;; right) axis_to pan $PTZ_MAX ;; up) axis_to tilt 0 ;; down) axis_to tilt $TILT_MAX ;; esac ;;
-    stop)   stop ;;
+        [ "$PAN_LEFT" = 1 ]  && { L=$PTZ_MAX; Rt=0; } || { L=0; Rt=$PTZ_MAX; }
+        [ "$TILT_DOWN" = 1 ] && { Up=0; Dn=$TILT_MAX; } || { Up=$TILT_MAX; Dn=0; }
+        case $d in left) axis_to pan $L ;; right) axis_to pan $Rt ;; up) axis_to tilt $Up ;; down) axis_to tilt $Dn ;; esac ;;
+    stop)   if [ -f $D/cont ]; then             # end of a continuous move: honour the minimum duration
+                w=$(( $(cat $D/cont) + MIN_MOVE_CS - $(now_cs) )); rm -f $D/cont
+                [ $w -gt 0 ] && usleep $((w * 10000))
+            fi
+            stop ;;
     goto)   move_to $(int $2) ${3:+$(int $3)} ;;
     rel)    move_to $(( $(pan) + $(int $2) )) $(( $(tilt) + $(int ${3:-0}) )) ;;
     fov)    fx=${2:-0}; fy=${3:-0}
             [ "$IMG_ROT180" = 1 ] && { fx=$(neg $fx); fy=$(neg $fy); }
-            set -- $(/app/bin/ptzmath $(pan) $(tilt) $fx $fy $PTZ_CENTER $PTZ_MAX $TILT_H $TILT_MAX $HFOV $VFOV $DEG_PER_STEP)
+            set -- $(/app/bin/ptzmath $(pan) $(tilt) $fx $fy $PTZ_CENTER $PTZ_MAX $TILT_H $TILT_MAX $HFOV $VFOV $DEG_PER_STEP $PAN_LEFT $TILT_DOWN)
             [ -n "$2" ] && move_to $1 $2 ;;
     pos)    echo "$(pan),$(tilt),0" ;;
     moving) moving && echo 1 || echo 0 ;;
