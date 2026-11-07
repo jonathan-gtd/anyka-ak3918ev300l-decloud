@@ -5,6 +5,7 @@
 # Output: $WORK/out/onvif/{onvif_simple_server,wsd_simple_server,templates/...}
 set -e
 WORK=${WORK:-/work}
+REPO=${REPO:-$(cd "$(dirname "$0")/.." && pwd)}
 XT=${XT:-/opt/xt/x-tools/arm-unknown-linux-uclibcgnueabi/bin}
 export PATH=$XT:$PATH
 T=arm-unknown-linux-uclibcgnueabi
@@ -45,7 +46,9 @@ sed -i -e 's|"/etc/onvif_simple_server.conf"|"/tmp/onvif/onvif_simple_server.con
        -e 's|"/var/log/onvif_simple_server.log"|"/tmp/onvif/onvif_simple_server.log"|' onvif_simple_server.c
 sed -i -e 's|"/var/log/wsd_simple_server.log"|"/tmp/onvif/wsd_simple_server.log"|' \
        -e 's|"/etc/wsd_simple_server"|"/app/www/wsd_files"|' wsd_simple_server.c
-make -s CC="$T-gcc -static -I$P/include -L$P/lib" STRIP=$T-strip onvif_simple_server wsd_simple_server 2>&1 | grep -E "error|undefined" || true
+python3 $REPO/tools/patch_onvif_fov.py ptz_service.c
+# pan unit = half-steps of a 4096 half-steps/turn stepper; lens: 102 deg diagonal ~ 94 deg horizontal (16:9)
+make -s CC="$T-gcc -static -I$P/include -L$P/lib -DPTZ_HFOV=${PTZ_HFOV:-94.0} -DPTZ_DEG_PER_STEP=${PTZ_DEG_PER_STEP:-0.087890625}" STRIP=$T-strip onvif_simple_server wsd_simple_server 2>&1 | grep -E "error|undefined" || true
 $T-strip onvif_simple_server wsd_simple_server
 rm -rf $OUT/* && mkdir -p $OUT/templates
 cp onvif_simple_server wsd_simple_server $OUT/

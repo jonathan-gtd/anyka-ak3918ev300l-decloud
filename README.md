@@ -22,6 +22,7 @@ Tested on a PTZ camera sold with the InstaView app (board `EVB_CBDM_AK3918EV300L
 | Hardware watchdog kept armed (camera reboots itself if user space hangs) | ✅ |
 | **Day/night** automatic (ISP luminance + hysteresis): IR-cut filter, IR LEDs, ISP night profile; `daynight auto\|day\|night` | ✅ (no light sensor on this board) |
 | **Pan** motor: homing at boot, `ptz` command, **ONVIF PTZ** (continuous move, stop, home, absolute/relative, 8 presets) | ✅ |
+| **Frigate autotracking** ready: ONVIF RelativeMove in `TranslationSpaceFov` mapped to the real lens (≈94° HFOV) and pan unit, reliable `MoveStatus` (MOVING/IDLE) | ✅ (pan only) |
 | Tilt motor | ⚠️ supported by the same code (GPIO 65,66,26,58) but disabled: broken on the test unit |
 | Audio, RTSP/ONVIF authentication | 🚧 |
 | H.264 | ❌ the EV300L encoder only does H.265 and JPEG |
